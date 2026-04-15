@@ -1,0 +1,261 @@
+services:
+  - type: web
+    name: career-architect-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r backend/requirements.txt
+      python backend/career_architect/manage.py collectstatic --noinput
+      python backend/career_architect/manage.py migrate --noinput
+    startCommand: |
+      cd backend
+      gunicorn career_architect.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --threads 4 --timeout 120
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: career_architect_db
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://career-architect.vercel.app,http://localhost:3000"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: AWS_STORAGE_BUCKET_NAME
+        value: career-architect-media
+      - key: AWS_S3_REGION_NAME
+        value: us-east-1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+  - type: web
+    name: career-architect-frontend
+    runtime: static
+    region: oregon
+    plan: free
+    buildCommand: |
+      cd frontend
+      npm ci --include=dev
+      npm run build
+    staticPublishPath: ./frontend/.next
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://career-architect-backend.onrender.com/api
+      - key: NEXT_PUBLIC_APP_NAME
+        value: Career Path Architect
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  - name: career_architect_db
+    region: oregon
+    plan: free
+    databaseName: career_architect
+    user: career_architect_user
+
+# Optional: Redis for caching and background jobs
+# addons:
+#   - type: redis
+#     name: career-architect-cache
+#     plan: free
+#     region: oregon
+
+# Optional: Cron jobs for maintenance tasks
+# cronJobs:
+#   - name: cleanup-expired-sessions
+#     schedule: "0 2 * * *"
+#     command: python manage.py clearsessions
+#     serviceId: career-architect-backend
+
+# Health checks
+# healthChecks:
+#   - name: backend-health
+#     serviceId: career-architect-backend
+#     path: /health/
+#     initialDelaySeconds: 30
+#     periodSeconds: 60
+#     timeoutSeconds: 10
+#     successThreshold: 1
+#     failureThreshold: 3
+
+# Environment-specific settings
+environments:
+  - name: production
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SENTRY_DSN
+        sync: false
+      - key: GOOGLE_ANALYTICS_ID
+        value: UA-XXXXXXXXX-X
+
+  - name: staging
+    envVars:
+      - key: DEBUG
+        value: "True"
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com,localhost"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://staging-career-architect.vercel.app,http://localhost:3000"
+
+# Deployment hooks
+# deployHooks:
+#   - type: pre-deploy
+#     name: run-migrations
+#     command: python manage.py migrate --noinput
+#     serviceId: career-architect-backend
+
+#   - type: post-deploy
+#     name: create-superuser
+#     command: python manage.py createsuperuser --noinput || true
+#     serviceId: career-architect-backend
+#     envVars:
+#       - key: DJANGO_SUPERUSER_USERNAME
+#         value: admin
+#       - key: DJANGO_SUPERUSER_EMAIL
+#         value: admin@example.com
+#       - key: DJANGO_SUPERUSER_PASSWORD
+#         sync: false
+
+#   - type: post-deploy
+#     name: seed-data
+#     command: python manage.py loaddata initial_data.json
+#     serviceId: career-architect-backend
+
+# Monitoring and alerts
+# alerts:
+#   - type: latency
+#     threshold: 1000ms
+#     window: 5m
+#   - type: error_rate
+#     threshold: 5%
+#     window: 5m
+#   - type: status_code
+#     threshold: 5%
+#     statusCodes: [500]
+#     window: 5m
+
+# Custom domains
+# domains:
+#   - name: api.careerarchitect.com
+#     serviceId: career-architect-backend
+#   - name: careerarchitect.com
+#     serviceId: career-architect-frontend
+
+# Environment variables documentation
+envVarsDoc: |
+  # Required variables:
+  # SECRET_KEY: Django secret key for cryptography
+  # DATABASE_URL: PostgreSQL connection string
+  # GEMINI_API_KEY: Google Gemini API key for AI features
+  
+  # Optional variables:
+  # DEBUG: Set to "True" for debugging, "False" in production
+  # ALLOWED_HOSTS: Comma-separated list of allowed hosts
+  # CORS_ALLOWED_ORIGINS: Comma-separated list of allowed CORS origins
+  # JWT_SECRET_KEY: Secret key for JWT token generation
+  # AWS_*: AWS credentials for S3 file storage (optional)
+  # SENTRY_DSN: Sentry DSN for error tracking (optional)
+  # GOOGLE_ANALYTICS_ID: Google Analytics tracking ID (optional)
+
+# Deployment regions
+regions:
+  - oregon
+  - frankfurt
+  - singapore
+  - sydney
+
+# Build settings
+buildSettings:
+  nodeVersion: 18.x
+  pythonVersion: 3.11.0
+
+# Disk settings
+disk:
+  name: data
+  mountPath: /data
+  sizeGB: 1
+
+# Network settings
+network:
+  - type: private
+    name: internal
+    services:
+      - career-architect-backend
+      - career-architect-frontend
+
+# Service dependencies
+dependencies:
+  - name: career-architect-frontend
+    dependsOn:
+      - career-architect-backend
+
+# Auto-scaling (for paid plans)
+# autoScaling:
+#   minInstances: 1
+#   maxInstances: 3
+#   targetMemoryPercent: 70
+#   targetCPUPercent: 70
+
+# Secrets management
+secrets:
+  - name: gemini_api_key
+    description: Google Gemini API key
+    required: true
+  
+  - name: aws_access_key_id
+    description: AWS access key for S3 storage
+    required: false
+  
+  - name: aws_secret_access_key
+    description: AWS secret key for S3 storage
+    required: false
+  
+  - name: sentry_dsn
+    description: Sentry DSN for error tracking
+    required: false
+
+# Health check endpoints
+healthCheckPaths:
+  - path: /health/
+    expectedResponseCode: 200
+  
+  - path: /api/
+    expectedResponseCode: 200
+  
+  - path: /admin/
+    expectedResponseCode: 302  # Redirect to login
+
+# Maintenance mode
+maintenanceMode:
+  enabled: false
+  message: "We're performing maintenance. We'll be back shortly!"
+
+# Backup settings (for database)
+backupSettings:
+  schedule: "0 0 * * *"  # Daily at midnight
+  retentionDays: 30
+  region: oregon
+
+# Log settings
+logSettings:
+  retentionDays: 30
+  level: info
+
+# Metrics
+metrics:
+  enabled: true
+  dashboard: true
+  alerts: true
